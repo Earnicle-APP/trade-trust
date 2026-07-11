@@ -1,0 +1,387 @@
+generator client {
+  provider        = "prisma-client"
+  output          = "../generated/prisma"
+  moduleFormat    = "cjs"
+  previewFeatures = ["partialIndexes"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum AppRole {
+  buyer
+  seller
+  inspector
+  arbitrator
+  admin
+}
+
+enum KycLevel {
+  none
+  basic
+  advanced
+}
+
+enum KycStatus {
+  not_submitted
+  pending
+  approved
+  rejected
+}
+
+enum ListingStatus {
+  draft
+  active
+  inactive
+  sold_out
+}
+
+enum Incoterm {
+  EXW
+  FCA
+  FAS
+  FOB
+  CFR
+  CIF
+  CPT
+  CIP
+  DAP
+  DPU
+  DDP
+}
+
+enum TradeStatus {
+  draft
+  negotiating
+  pending_escrow
+  funded
+  in_transit
+  inspection
+  pending_approval
+  completed
+  disputed
+  cancelled
+}
+
+enum EscrowStatus {
+  unfunded
+  pending
+  funded
+  released
+  refunded
+  disputed
+}
+
+enum InspectionResult {
+  pending
+  pass
+  fail
+}
+
+enum DisputeStatus {
+  open
+  under_review
+  resolved
+}
+
+enum DisputeResolution {
+  release_to_seller
+  refund_buyer
+  split
+}
+
+enum NotificationType {
+  trade_status
+  new_message
+  inspection_update
+  dispute_update
+  kyc_update
+}
+
+model Profile {
+  id                  String   @id @default(uuid()) @db.Uuid
+  email               String   @unique
+  passwordHash        String?  @map("password_hash")
+  googleId            String?  @unique @map("google_id")
+  emailVerified       Boolean  @default(false) @map("email_verified")
+  fullName            String   @map("full_name")
+  companyName         String?  @map("company_name")
+  country             String?
+  businessType        String?  @map("business_type")
+  avatarUrl           String?  @map("avatar_url")
+  walletBalance       Decimal  @default(0) @db.Decimal(14, 2) @map("wallet_balance")
+  kycLevel            KycLevel @default(none) @map("kyc_level")
+  kycStatus           KycStatus @default(not_submitted) @map("kyc_status")
+  reputationScore     Decimal  @default(0) @db.Decimal(3, 2) @map("reputation_score")
+  onboardingCompleted Boolean  @default(false) @map("onboarding_completed")
+  createdAt           DateTime      @default(now()) @map("created_at")
+  updatedAt           DateTime      @updatedAt @map("updated_at")
+
+  userRoles            UserRole[]
+  refreshTokens        RefreshToken[]
+  verificationTokens   VerificationToken[]
+  kycDocuments         KycDocument[]
+  reviewedKycDocuments KycDocument[]       @relation("ReviewedKycDocuments")
+  listings             Listing[]
+  buyerTrades          Trade[]             @relation("BuyerTrades")
+  sellerTrades         Trade[]             @relation("SellerTrades")
+  tradeStatusHistories TradeStatusHistory[]
+  tradeMessages        TradeMessage[]
+  escrowEvents         EscrowEvent[]
+  inspections          Inspection[]
+  raisedDisputes       Dispute[]           @relation("RaisedDisputes")
+  arbitratedDisputes   Dispute[]           @relation("ArbitratedDisputes")
+  notifications        Notification[]
+
+  @@map("profiles")
+}
+
+model UserRole {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  role      AppRole
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, role])
+  @@map("user_roles")
+}
+
+model KycDocument {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  documentType String    @map("document_type")
+  filePath     String    @map("file_path")
+  status       KycStatus @default(pending)
+  reviewedBy   String?   @map("reviewed_by") @db.Uuid
+  reviewNotes  String?   @map("review_notes")
+  reviewedAt   DateTime? @map("reviewed_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  user     Profile  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviewer Profile? @relation("ReviewedKycDocuments", fields: [reviewedBy], references: [id])
+
+  @@map("kyc_documents")
+}
+
+model Listing {
+  id                String        @id @default(uuid()) @db.Uuid
+  sellerId          String        @map("seller_id") @db.Uuid
+  name              String
+  description       String?
+  category          String
+  country           String
+  pricePerUnit      Decimal       @db.Decimal(14, 2) @map("price_per_unit")
+  unit              String
+  quantityAvailable Decimal       @db.Decimal(14, 2) @map("quantity_available")
+  minOrderQuantity  Decimal       @default(1) @db.Decimal(14, 2) @map("min_order_quantity")
+  incoterms         Incoterm
+  status            ListingStatus @default(draft)
+  createdAt         DateTime      @default(now()) @map("created_at")
+  updatedAt         DateTime      @updatedAt @map("updated_at")
+
+  seller Profile       @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  images ListingImage[]
+  trades Trade[]
+
+  @@index([category, country, status], name: "idx_listings_search")
+  @@map("listings")
+}
+
+model ListingImage {
+  id        String @id @default(uuid()) @db.Uuid
+  listingId String @map("listing_id") @db.Uuid
+  imageUrl  String @map("image_url")
+  sortOrder Int    @default(0) @map("sort_order")
+
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@map("listing_images")
+}
+
+model Trade {
+  id                String       @id @default(uuid()) @db.Uuid
+  listingId         String       @map("listing_id") @db.Uuid
+  buyerId           String       @map("buyer_id") @db.Uuid
+  sellerId          String       @map("seller_id") @db.Uuid
+  quantity          Decimal      @db.Decimal(14, 2)
+  pricePerUnit      Decimal      @db.Decimal(14, 2) @map("price_per_unit")
+  incoterms         Incoterm
+  depositPercentage Int          @default(100) @map("deposit_percentage")
+  paymentTerms      String?      @map("payment_terms")
+  deliveryDate      DateTime?    @map("delivery_date") @db.Date
+  status            TradeStatus  @default(draft)
+  escrowStatus      EscrowStatus @default(unfunded) @map("escrow_status")
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+
+  listing      Listing             @relation(fields: [listingId], references: [id])
+  buyer        Profile             @relation("BuyerTrades", fields: [buyerId], references: [id])
+  seller       Profile             @relation("SellerTrades", fields: [sellerId], references: [id])
+  statusHistory TradeStatusHistory[]
+  messages     TradeMessage[]
+  escrowEvents EscrowEvent[]
+  shipments    Shipment[]
+  inspections  Inspection[]
+  disputes     Dispute[]
+  notifications Notification[]
+
+  @@index([buyerId, status], name: "idx_trades_buyer")
+  @@index([sellerId, status], name: "idx_trades_seller")
+  @@map("trades")
+}
+
+model TradeStatusHistory {
+  id         String       @id @default(uuid()) @db.Uuid
+  tradeId    String       @map("trade_id") @db.Uuid
+  fromStatus TradeStatus? @map("from_status")
+  toStatus   TradeStatus  @map("to_status")
+  changedBy  String?      @map("changed_by") @db.Uuid
+  note       String?
+  createdAt  DateTime     @default(now()) @map("created_at")
+
+  trade   Trade     @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+  changer Profile?  @relation(fields: [changedBy], references: [id])
+
+  @@map("trade_status_history")
+}
+
+model TradeMessage {
+  id            String   @id @default(uuid()) @db.Uuid
+  tradeId       String   @map("trade_id") @db.Uuid
+  senderId      String   @map("sender_id") @db.Uuid
+  message       String?
+  isCounterOffer Boolean @default(false) @map("is_counter_offer")
+  offerPrice    Decimal? @map("offer_price") @db.Decimal(14, 2)
+  offerQuantity Decimal? @map("offer_quantity") @db.Decimal(14, 2)
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  trade  Trade   @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+  sender Profile @relation(fields: [senderId], references: [id])
+
+  @@index([tradeId, createdAt], name: "idx_messages_trade")
+  @@map("trade_messages")
+}
+
+model EscrowEvent {
+  id            String        @id @default(uuid()) @db.Uuid
+  tradeId       String        @map("trade_id") @db.Uuid
+  fromStatus    EscrowStatus? @map("from_status")
+  toStatus      EscrowStatus  @map("to_status")
+  amount        Decimal?      @db.Decimal(14, 2)
+  paymentMethod String?       @map("payment_method")
+  triggeredBy   String?       @map("triggered_by") @db.Uuid
+  createdAt     DateTime      @default(now()) @map("created_at")
+
+  trade     Trade    @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+  triggerer Profile? @relation(fields: [triggeredBy], references: [id])
+
+  @@map("escrow_events")
+}
+
+model Shipment {
+  id                  String   @id @default(uuid()) @db.Uuid
+  tradeId             String   @map("trade_id") @db.Uuid
+  carrier             String?
+  trackingNumber      String?  @map("tracking_number")
+  eta                 DateTime? @db.Date
+  proofDocumentPaths  String[] @default([]) @map("proof_document_paths")
+  status              String   @default("pending")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  trade Trade @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+
+  @@map("shipments")
+}
+
+model Inspection {
+  id            String           @id @default(uuid()) @db.Uuid
+  tradeId       String           @map("trade_id") @db.Uuid
+  inspectorId   String?          @map("inspector_id") @db.Uuid
+  dueDate       DateTime?        @map("due_date") @db.Date
+  fee           Decimal?         @db.Decimal(10, 2)
+  checklist     Json             @default("[]")
+  photoPaths    String[]         @default([]) @map("photo_paths")
+  documentPaths String[]         @default([]) @map("document_paths")
+  notes         String?
+  result        InspectionResult @default(pending)
+  submittedAt   DateTime?        @map("submitted_at")
+  createdAt     DateTime         @default(now()) @map("created_at")
+
+  trade     Trade     @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+  inspector Profile?  @relation(fields: [inspectorId], references: [id])
+
+  @@map("inspections")
+}
+
+model Dispute {
+  id                    String             @id @default(uuid()) @db.Uuid
+  tradeId               String             @map("trade_id") @db.Uuid
+  raisedBy              String             @map("raised_by") @db.Uuid
+  reason                String
+  buyerEvidencePaths    String[]           @default([]) @map("buyer_evidence_paths")
+  sellerEvidencePaths   String[]           @default([]) @map("seller_evidence_paths")
+  arbitratorId          String?            @map("arbitrator_id") @db.Uuid
+  status                DisputeStatus      @default(open)
+  resolution            DisputeResolution?
+  splitPercentageSeller Int?               @map("split_percentage_seller")
+  resolutionNotes       String?            @map("resolution_notes")
+  createdAt             DateTime           @default(now()) @map("created_at")
+  resolvedAt            DateTime?          @map("resolved_at")
+
+  trade      Trade     @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+  raiser     Profile   @relation("RaisedDisputes", fields: [raisedBy], references: [id])
+  arbitrator Profile?  @relation("ArbitratedDisputes", fields: [arbitratorId], references: [id])
+
+  @@index([status], name: "idx_disputes_open", where: raw("status <> 'resolved'"))
+  @@map("disputes")
+}
+
+model Notification {
+  id             String           @id @default(uuid()) @db.Uuid
+  userId         String           @map("user_id") @db.Uuid
+  type           NotificationType
+  title          String
+  message        String?
+  relatedTradeId String?          @map("related_trade_id") @db.Uuid
+  isRead         Boolean          @default(false) @map("is_read")
+  createdAt      DateTime         @default(now()) @map("created_at")
+
+  user         Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+  relatedTrade Trade?  @relation(fields: [relatedTradeId], references: [id])
+
+  @@index([userId], name: "idx_notifications_unread", where: raw("is_read = false"))
+  @@map("notifications")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  tokenHash String   @unique @map("token_hash")
+  expiresAt DateTime @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tokenHash])
+  @@map("refresh_tokens")
+}
+
+model VerificationToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  token     String   @unique
+  type      String   // 'email_verification' | 'password_reset'
+  expiresAt DateTime @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@map("verification_tokens")
+}
