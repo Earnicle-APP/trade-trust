@@ -19,5 +19,8 @@
   "type": "commonjs",
   "devDependencies": {
     "turbo": "^2.10.4"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "^7.8.0"
   }
 }
