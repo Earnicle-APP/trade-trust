@@ -3,7 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { AddRoleDto } from './dto/add-role.dto';
 import { UserResponse, UserRoleResponse } from './dto/user-response.dto';
-import { AppRole } from '../../generated/prisma/client';
+import { AppRole } from '../generated/prisma/client';
 
 @Injectable()
 export class UserService {

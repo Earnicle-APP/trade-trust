@@ -22,7 +22,7 @@ import { VerifyEmailDto } from './dto/verify-email.dto';
 import { ResendVerificationDto } from './dto/resend-verification.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
-import { AuthResponse } from './dto/auth-response.dto';
+import { AuthResponse, UserResponse } from './dto/auth-response.dto';
 import { LocalAuthGuard } from './guards/local-auth.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser } from './decorators/current-user.decorator';
@@ -148,7 +148,7 @@ export class AuthController {
   @Get('me')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get the currently authenticated user profile' })
-  @ApiResponse({ status: 200, type: AuthResponse['user'] })
+  @ApiResponse({ status: 200, type: UserResponse })
   getProfile(@CurrentUser('id') userId: string) {
     return this.authService.getProfile(userId);
   }

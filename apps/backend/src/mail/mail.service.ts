@@ -2,10 +2,19 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Resend } from 'resend';
 
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 @Injectable()
 export class MailService {
   private readonly logger = new Logger(MailService.name);
-  private readonly resend: Resend | null = null;
+  private readonly resend: Resend | null;
   private readonly appUrl: string;
   private readonly from: string;
 
@@ -21,6 +30,7 @@ export class MailService {
       this.resend = new Resend(apiKey);
       this.logger.log('Resend mail transport configured');
     } else {
+      this.resend = null;
       this.logger.warn(
         'RESEND_API_KEY not set — emails will be logged to console only',
       );
@@ -32,12 +42,14 @@ export class MailService {
     token: string,
     name: string,
   ): Promise<void> {
-    const link = `${this.appUrl}/verify-email?token=${token}`;
+    const encodedToken = encodeURIComponent(token);
+    const link = `${this.appUrl}/verify-email?token=${encodedToken}`;
+    const safeName = escapeHtml(name);
 
     await this.send({
       to: email,
       subject: 'Verify your TradeTrust account',
-      html: `<p>Hi ${name},</p><p>Please verify your email by clicking the link below:</p><p><a href="${link}">${link}</a></p><p>This link expires in 24 hours.</p><p>— TradeTrust team</p>`,
+      html: `<p>Hi ${safeName},</p><p>Please verify your email by clicking the link below:</p><p><a href="${link}">${link}</a></p><p>This link expires in 24 hours.</p><p>— TradeTrust team</p>`,
     });
   }
 
@@ -46,12 +58,14 @@ export class MailService {
     token: string,
     name: string,
   ): Promise<void> {
-    const link = `${this.appUrl}/reset-password?token=${token}`;
+    const encodedToken = encodeURIComponent(token);
+    const link = `${this.appUrl}/reset-password?token=${encodedToken}`;
+    const safeName = escapeHtml(name);
 
     await this.send({
       to: email,
       subject: 'Reset your TradeTrust password',
-      html: `<p>Hi ${name},</p><p>You requested a password reset. Click the link below to set a new password:</p><p><a href="${link}">${link}</a></p><p>This link expires in 1 hour. If you didn't request this, ignore this email.</p><p>— TradeTrust team</p>`,
+      html: `<p>Hi ${safeName},</p><p>You requested a password reset. Click the link below to set a new password:</p><p><a href="${link}">${link}</a></p><p>This link expires in 1 hour. If you didn't request this, ignore this email.</p><p>— TradeTrust team</p>`,
     });
   }
 
@@ -60,23 +74,24 @@ export class MailService {
     subject: string;
     html: string;
   }): Promise<void> {
-    if (this.resend) {
-      const { error } = await this.resend.emails.send({
-        from: this.from,
-        to: [opts.to],
-        subject: opts.subject,
-        html: opts.html,
-      });
-
-      if (error) {
-        this.logger.error(`Failed to send email: ${error.message}`, error);
-      }
-    } else {
+    if (!this.resend) {
       this.logger.log('--- EMAIL ---');
       this.logger.log(`To: ${opts.to}`);
       this.logger.log(`Subject: ${opts.subject}`);
       this.logger.log(`Body: ${opts.html.replace(/<[^>]*>/g, '')}`);
       this.logger.log('--- END EMAIL ---');
+      return;
+    }
+
+    const { error } = await this.resend.emails.send({
+      from: this.from,
+      to: [opts.to],
+      subject: opts.subject,
+      html: opts.html,
+    });
+
+    if (error) {
+      throw new Error(`Failed to send email: ${error.message}`);
     }
   }
 }

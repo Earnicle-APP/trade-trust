@@ -30,21 +30,31 @@ async function bootstrap() {
     allowedHeaders: ['Content-Type', 'Authorization'],
   });
 
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('TradeTrust API')
-    .setDescription('TradeTrust — secure trade platform backend')
-    .setVersion('1.0')
-    .addBearerAuth()
-    .build();
+  const isProduction = process.env.NODE_ENV === 'production';
 
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup('api/docs', app, document, {
-    swaggerOptions: { persistAuthorization: true },
-  });
+  if (!isProduction) {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('TradeTrust API')
+      .setDescription('TradeTrust — secure trade platform backend')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .build();
+
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup('api/docs', app, document);
+  }
 
   await app.listen(process.env.PORT ?? 8000);
   console.log(`Server running on http://localhost:${process.env.PORT ?? 8000}`);
-  console.log(`API docs at http://localhost:${process.env.PORT ?? 8000}/api/docs`);
+
+  if (!isProduction) {
+    console.log(
+      `API docs at http://localhost:${process.env.PORT ?? 8000}/api/docs`,
+    );
+  }
 }
 
-bootstrap();
+void bootstrap().catch((error) => {
+  console.error('Failed to bootstrap application', error);
+  process.exit(1);
+});

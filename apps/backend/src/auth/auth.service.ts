@@ -3,7 +3,6 @@ import {
   ConflictException,
   UnauthorizedException,
   BadRequestException,
-  NotFoundException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -130,8 +129,10 @@ export class AuthService {
   }
 
   async verifyEmail(tokenValue: string): Promise<{ message: string }> {
+    const tokenHash = this.hashToken(tokenValue);
+
     const stored = await this.prisma.verificationToken.findUnique({
-      where: { token: tokenValue },
+      where: { tokenHash },
     });
 
     if (!stored) {
@@ -160,6 +161,7 @@ export class AuthService {
         data: { usedAt: new Date() },
       }),
     ]);
+
     return { message: 'Email verified' };
   }
 
@@ -198,12 +200,13 @@ export class AuthService {
       data: { usedAt: new Date() },
     });
 
-    const token = crypto.randomBytes(40).toString('hex');
+    const rawToken = crypto.randomBytes(40).toString('hex');
+    const tokenHash = this.hashToken(rawToken);
 
     await this.prisma.verificationToken.create({
       data: {
         userId: profile.id,
-        token,
+        tokenHash,
         type: 'password_reset',
         expiresAt: new Date(Date.now() + 60 * 60 * 1000),
       },
@@ -211,14 +214,16 @@ export class AuthService {
 
     await this.mailService.sendPasswordResetEmail(
       profile.email,
-      token,
+      rawToken,
       profile.fullName,
     );
   }
 
   async resetPassword(tokenValue: string, newPassword: string): Promise<void> {
+    const tokenHash = this.hashToken(tokenValue);
+
     const stored = await this.prisma.verificationToken.findUnique({
-      where: { token: tokenValue },
+      where: { tokenHash },
     });
 
     if (!stored) {
@@ -326,12 +331,13 @@ export class AuthService {
   }
 
   private async sendVerificationEmail(profile: any): Promise<void> {
-    const token = crypto.randomBytes(40).toString('hex');
+    const rawToken = crypto.randomBytes(40).toString('hex');
+    const tokenHash = this.hashToken(rawToken);
 
     await this.prisma.verificationToken.create({
       data: {
         userId: profile.id,
-        token,
+        tokenHash,
         type: 'email_verification',
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
       },
@@ -339,7 +345,7 @@ export class AuthService {
 
     await this.mailService.sendVerificationEmail(
       profile.email,
-      token,
+      rawToken,
       profile.fullName,
     );
   }

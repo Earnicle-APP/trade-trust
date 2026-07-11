@@ -7,8 +7,15 @@ import {
   Body,
   Param,
   UseGuards,
+  ForbiddenException,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiParam,
+} from '@nestjs/swagger';
 import { UserService } from './user.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { AddRoleDto } from './dto/add-role.dto';
@@ -17,7 +24,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { AppRole } from '../../generated/prisma/client';
+import { AppRole } from '../generated/prisma/client';
 
 @ApiTags('Users')
 @ApiBearerAuth()
@@ -46,10 +53,18 @@ export class UserController {
 
   @UseGuards(JwtAuthGuard)
   @Patch(':id')
-  @ApiOperation({ summary: 'Update a user profile' })
+  @ApiOperation({ summary: 'Update own profile or admin-update any user' })
   @ApiParam({ name: 'id', type: String })
   @ApiResponse({ status: 200, type: UserResponse })
-  update(@Param('id') id: string, @Body() dto: UpdateUserDto, @CurrentUser('id') currentUserId: string) {
+  @ApiResponse({ status: 403, description: 'Cannot update another user' })
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateUserDto,
+    @CurrentUser() currentUser: any,
+  ) {
+    if (id !== currentUser.id && !currentUser.roles.includes(AppRole.admin)) {
+      throw new ForbiddenException('You can only update your own profile');
+    }
     return this.userService.update(id, dto);
   }
 
